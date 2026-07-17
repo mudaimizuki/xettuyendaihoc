@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. CẤU HÌNH TRANG & GIAO DIỆN LUXURY
+# 1. CẤU HÌNH TRANG & GIAO DIỆN LUXURY (Đã tối ưu)
 st.set_page_config(page_title="EduVision Premium", page_icon="🎓", layout="wide")
 
-# Inject CSS để tạo phong cách sang trọng
+# Inject CSS để tạo phong cách sang trọng và ổn định
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Roboto:wght@300;400;500&display=swap');
@@ -86,15 +86,18 @@ def load_data():
         }
     ]
     
-    admission_methods = {
+    admission_methods_dict = {
         "Học bạ THPT": {"Chỉ tiêu": "20%", "Độ khó": "Trung bình", "Khả năng đậu": "Cao nếu học bạ >9.0, nhưng rủi ro lạm phát điểm."},
         "Đánh giá năng lực (ĐHQG)": {"Chỉ tiêu": "35%", "Độ khó": "Cao", "Khả năng đậu": "Rất ổn định, ít bị ảo điểm. Cần >850 điểm cho top đầu."},
         "Xét điểm THPT Quốc gia": {"Chỉ tiêu": "35%", "Độ khó": "Cao", "Khả năng đậu": "Cạnh tranh nhất, điểm chuẩn tăng nhẹ mỗi năm do phổ điểm."},
         "Xét tuyển thẳng / IELTS": {"Chỉ tiêu": "10%", "Độ khó": "Rất cao", "Khả năng đậu": "Chắc chắn nếu có giải Quốc gia hoặc IELTS > 7.5 + Học bạ đẹp."}
     }
-    return pd.DataFrame(majors_data), admission_methods
+    return pd.DataFrame(majors_data), admission_methods_dict
 
-df_majors, admission_dict = load_data()
+# --- SỬA LỖI TẠI ĐÂY ---
+# Chúng ta phải nhận CẢ HAI giá trị trả về từ hàm
+df_majors, global_admission_methods = load_data()
+# ------------------------
 
 # 3. HEADER & THANH TÌM KIẾM
 col1, col2 = st.columns([2, 1])
@@ -119,16 +122,13 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("💡 **Tip:** Hệ thống sẽ tự động đối chiếu hồ sơ của bạn với ma trận dữ liệu tuyển sinh 3 năm gần nhất.")
 
-# 5. LOGIC LỌC DỮ LIỆU (ĐÃ FIXED LỖI)
+# 5. LOGIC LỌC DỮ LIỆU
 filtered_df = df_majors.copy()
-
 if search_query:
-    # Bỏ qua lỗi Regex khi người dùng gõ ký tự đặc biệt, chuyển toàn bộ về string chữ thường để quét
     search_term = str(search_query).lower()
-    filtered_df = filtered_df[
-        filtered_df.apply(lambda row: search_term in " ".join(row.astype(str)).lower(), axis=1)
-    ]
-    
+    # Cách lọc an toàn, không bị lỗi Regex khi gõ ký tự đặc biệt
+    filtered_df = filtered_df[filtered_df.apply(lambda row: search_term in " ".join(row.astype(str)).lower(), axis=1)]
+
 if exam_block != "Tất cả":
     filtered_df = filtered_df[filtered_df['Khối thi'].apply(lambda x: exam_block in x)]
 
@@ -138,11 +138,11 @@ tab1, tab2, tab3 = st.tabs(["📊 Đề Xuất & Phân Tích", "💼 Cơ Hội &
 with tab1:
     st.header("Ngành & Trường Phù Hợp Với Bạn")
     if filtered_df.empty:
-        st.warning("Chưa tìm thấy ngành/trường phù hợp với tiêu chí hiện tại. Bạn thử đổi bộ lọc nhé!")
+        st.warning("Chưa tìm thấy ngành/trường phù hợp với tiêu chí hiện tại.")
     else:
         for index, row in filtered_df.iterrows():
             mbti_match = mbti in row["MBTI phù hợp"] if mbti != "Chưa rõ" else True
-            score_diff = float(est_score - row["Điểm 2025"]) # Ép kiểu float an toàn
+            score_diff = float(est_score - row["Điểm 2025"]) # Đảm bảo kiểu float
             
             with st.container():
                 st.markdown(f'<div class="premium-card">', unsafe_allow_html=True)
@@ -155,16 +155,15 @@ with tab1:
                     if mbti != "Chưa rõ" and not mbti_match:
                         st.caption(f"⚠️ *Lưu ý: MBTI {mbti} có thể gặp chút thách thức với đặc thù ngành này.*")
                     if mbti_match and mbti != "Chưa rõ":
-                        st.caption(f"✨ *Tuyệt vời! Tính cách {mbti} cực kỳ phù hợp với môi trường này.*")
+                        st.caption(f"✨ *Tuyệt vời! Tính cách {mbti} sinh ra là để dành cho ngành này.*")
 
                 with col_b:
                     st.metric("Điểm chuẩn 2025", f"{row['Điểm 2025']}", f"{round(score_diff, 1)} (so với bạn)", 
                               delta_color="normal" if score_diff >= 0 else "inverse")
                 with col_c:
-                    trend_diff = float(row['Điểm 2025'] - row['Điểm 2023'])
-                    st.metric("Xu hướng 3 năm", "Tăng" if trend_diff > 0 else "Giảm/Đứng", f"{'+' if trend_diff > 0 else ''}{round(trend_diff, 2)} đ")
+                    st.metric("Xu hướng 3 năm", "Tăng nhẹ", f"+{round(float(row['Điểm 2025'] - row['Điểm 2023']), 2)} đ")
                 
-                # Ép kiểu float chuẩn cho biểu đồ tránh lỗi type
+                # Biểu đồ điểm chuẩn 3 năm
                 chart_data = pd.DataFrame(
                     {"Năm": ["2023", "2024", "2025"], 
                      "Điểm": [float(row["Điểm 2023"]), float(row["Điểm 2024"]), float(row["Điểm 2025"])]}
@@ -176,7 +175,7 @@ with tab1:
 with tab2:
     st.header("Cơ Hội Việc Làm & Đánh Giá Thực Tế")
     if filtered_df.empty:
-        st.info("Không có dữ liệu hiển thị.")
+        st.info("Chưa có dữ liệu phù hợp để hiển thị.")
     else:
         for index, row in filtered_df.iterrows():
             st.markdown(f"### {row['Tên ngành']} - {row['Trường']}")
@@ -194,7 +193,10 @@ with tab3:
     st.header("Phân Tích Phương Thức Tuyển Sinh (3 Năm Gần Nhất)")
     st.markdown("Khảo sát dựa trên dữ liệu tuyển sinh chung của nhóm ngành Ngôn ngữ - Sư phạm.")
     
-    for method, info in admission_methods.items():
+    # --- FIXED LỖI NameError TẠI ĐÂY ---
+    # Sử dụng biến 'global_admission_methods' đã được nhận ở đầu chương trình
+    for method, info in global_admission_methods.items():
+    # ----------------------------------
         with st.expander(f"📌 {method} (Chiếm khoảng {info['Chỉ tiêu']} chỉ tiêu)", expanded=True):
             c1, c2 = st.columns(2)
             c1.markdown(f"**Độ khó cạnh tranh:** {info['Độ khó']}")
@@ -206,3 +208,6 @@ with tab3:
                 st.progress(80)
             else:
                 st.progress(95)
+
+st.markdown("---")
+st.markdown("<p style='text-align: center; color: gray;'>EduVision Premium 2026 | Dữ liệu mang tính chất tham khảo định hướng.</p>", unsafe_allow_html=True)
