@@ -119,10 +119,16 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("💡 **Tip:** Hệ thống sẽ tự động đối chiếu hồ sơ của bạn với ma trận dữ liệu tuyển sinh 3 năm gần nhất.")
 
-# 5. LOGIC LỌC DỮ LIỆU
+# 5. LOGIC LỌC DỮ LIỆU (ĐÃ FIXED LỖI)
 filtered_df = df_majors.copy()
+
 if search_query:
-    filtered_df = filtered_df[filtered_df.apply(lambda row: row.astype(str).str.contains(search_query, case=False).any(), axis=1)]
+    # Bỏ qua lỗi Regex khi người dùng gõ ký tự đặc biệt, chuyển toàn bộ về string chữ thường để quét
+    search_term = str(search_query).lower()
+    filtered_df = filtered_df[
+        filtered_df.apply(lambda row: search_term in " ".join(row.astype(str)).lower(), axis=1)
+    ]
+    
 if exam_block != "Tất cả":
     filtered_df = filtered_df[filtered_df['Khối thi'].apply(lambda x: exam_block in x)]
 
@@ -132,38 +138,36 @@ tab1, tab2, tab3 = st.tabs(["📊 Đề Xuất & Phân Tích", "💼 Cơ Hội &
 with tab1:
     st.header("Ngành & Trường Phù Hợp Với Bạn")
     if filtered_df.empty:
-        st.warning("Chưa tìm thấy ngành/trường phù hợp với tiêu chí hiện tại.")
+        st.warning("Chưa tìm thấy ngành/trường phù hợp với tiêu chí hiện tại. Bạn thử đổi bộ lọc nhé!")
     else:
         for index, row in filtered_df.iterrows():
-            # Tính toán độ phù hợp
             mbti_match = mbti in row["MBTI phù hợp"] if mbti != "Chưa rõ" else True
-            ennea_match = enneagram in row["Enneagram phù hợp"] if enneagram != "Chưa rõ" else True
-            score_diff = est_score - row["Điểm 2025"]
+            score_diff = float(est_score - row["Điểm 2025"]) # Ép kiểu float an toàn
             
-            # Hiển thị thẻ thông tin
             with st.container():
                 st.markdown(f'<div class="premium-card">', unsafe_allow_html=True)
-                
                 col_a, col_b, col_c = st.columns([3, 1, 1])
+                
                 with col_a:
                     st.subheader(f"{row['Tên ngành']}")
                     st.markdown(f"**Trường:** {row['Trường']} | **Khối:** {', '.join(row['Khối thi'])}")
                     
-                    # Cảnh báo tính cách
                     if mbti != "Chưa rõ" and not mbti_match:
                         st.caption(f"⚠️ *Lưu ý: MBTI {mbti} có thể gặp chút thách thức với đặc thù ngành này.*")
                     if mbti_match and mbti != "Chưa rõ":
-                        st.caption(f"✨ *Tuyệt vời! Tính cách {mbti} sinh ra là để dành cho ngành này.*")
+                        st.caption(f"✨ *Tuyệt vời! Tính cách {mbti} cực kỳ phù hợp với môi trường này.*")
 
                 with col_b:
                     st.metric("Điểm chuẩn 2025", f"{row['Điểm 2025']}", f"{round(score_diff, 1)} (so với bạn)", 
                               delta_color="normal" if score_diff >= 0 else "inverse")
                 with col_c:
-                    st.metric("Xu hướng 3 năm", "Tăng nhẹ", f"+{round(row['Điểm 2025'] - row['Điểm 2023'], 2)} đ")
+                    trend_diff = float(row['Điểm 2025'] - row['Điểm 2023'])
+                    st.metric("Xu hướng 3 năm", "Tăng" if trend_diff > 0 else "Giảm/Đứng", f"{'+' if trend_diff > 0 else ''}{round(trend_diff, 2)} đ")
                 
-                # Chart nhỏ so sánh điểm 3 năm
+                # Ép kiểu float chuẩn cho biểu đồ tránh lỗi type
                 chart_data = pd.DataFrame(
-                    {"Năm": ["2023", "2024", "2025"], "Điểm": [row["Điểm 2023"], row["Điểm 2024"], row["Điểm 2025"]]}
+                    {"Năm": ["2023", "2024", "2025"], 
+                     "Điểm": [float(row["Điểm 2023"]), float(row["Điểm 2024"]), float(row["Điểm 2025"])]}
                 ).set_index("Năm")
                 st.line_chart(chart_data, height=150, use_container_width=True)
                 
@@ -171,17 +175,20 @@ with tab1:
 
 with tab2:
     st.header("Cơ Hội Việc Làm & Đánh Giá Thực Tế")
-    for index, row in filtered_df.iterrows():
-        st.markdown(f"### {row['Tên ngành']} - {row['Trường']}")
-        col_pros, col_cons = st.columns(2)
-        with col_pros:
-            st.success(f"**Ưu điểm:**\n{row['Ưu điểm']}")
-        with col_cons:
-            st.error(f"**Nhược điểm:**\n{row['Nhược điểm']}")
-        
-        st.info(f"**Cơ hội việc làm sau khi ra trường:** {row['Cơ hội việc làm']}")
-        st.markdown(f"**Mức học phí tham khảo:** {row['Học phí (Tr/năm)']} triệu VNĐ/năm")
-        st.divider()
+    if filtered_df.empty:
+        st.info("Không có dữ liệu hiển thị.")
+    else:
+        for index, row in filtered_df.iterrows():
+            st.markdown(f"### {row['Tên ngành']} - {row['Trường']}")
+            col_pros, col_cons = st.columns(2)
+            with col_pros:
+                st.success(f"**Ưu điểm:**\n{row['Ưu điểm']}")
+            with col_cons:
+                st.error(f"**Nhược điểm:**\n{row['Nhược điểm']}")
+            
+            st.info(f"**Cơ hội việc làm sau khi ra trường:** {row['Cơ hội việc làm']}")
+            st.markdown(f"**Mức học phí tham khảo:** {row['Học phí (Tr/năm)']} triệu VNĐ/năm")
+            st.divider()
 
 with tab3:
     st.header("Phân Tích Phương Thức Tuyển Sinh (3 Năm Gần Nhất)")
@@ -193,13 +200,9 @@ with tab3:
             c1.markdown(f"**Độ khó cạnh tranh:** {info['Độ khó']}")
             c2.markdown(f"**Phân tích khả năng đậu:** {info['Khả năng đậu']}")
             
-            # Giả lập thanh Progress bar tỉ lệ cạnh tranh
             if info['Độ khó'] == "Trung bình":
                 st.progress(50)
             elif info['Độ khó'] == "Cao":
                 st.progress(80)
             else:
                 st.progress(95)
-
-st.markdown("---")
-st.markdown("<p style='text-align: center; color: gray;'>Phát triển cho học sinh Khối 10 (Phiên bản 2026) | Dữ liệu mang tính chất tham khảo định hướng.</p>", unsafe_allow_html=True)
